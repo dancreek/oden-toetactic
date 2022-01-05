@@ -1,0 +1,50 @@
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+
+#header {
+    flex: 1;
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+}
+
+#header #resetButton {
+
+}
+
+#gameBoard {
+    display: flex;
+    flex-direction: column;
+    border-style: solid;
+    border-width: 4px;
+    border-color: black;
+}
+
+.gameRow {
+    display: flex;
+}
+
+.gameSquare {
+    width: 100px;
+    height: 100px;
+    border-width: 4px;
+    border-color: black;
+    border-style: solid;
+    display: flex;
+    align-items: stretch;
+    justify-content: stretch;
+    flex: 0 0 auto;
+    padding: 10px;
+}
+
+.gameSquare .marker {
+    flex: 1;
+}
+
+.hidden {
+    display: none;
+}
