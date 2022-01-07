@@ -4,66 +4,73 @@ const Player = (id, name, markerFile, isAi) => {
 }
 
 //Board
-const Board = (size) => {
-
-    let state = [];
-    let winningPlayerId = null;
-    const UNPLAYED = -1;
+const Board = (boardState) => {
+    const UNPLAYED = '';
     const TIE = -1;
+    let state = boardState || newState(3);
+    let winningPlayerId = null;
 
     const possibleWins = [
-        ['0-0','0-1','0-2'],
-        ['1-0','1-1','1-2'],
-        ['2-0','2-1','2-2'],
-        ['0-0','1-0','2-0'],
-        ['0-1','1-1','2-1'],
-        ['0-2','1-2','2-2'],
-        ['0-0','1-1','2-2'],
-        ['0-2','1-1','2-0'],
+        ['GS0-0','GS0-1','GS0-2'],
+        ['GS1-0','GS1-1','GS1-2'],
+        ['GS2-0','GS2-1','GS2-2'],
+        ['GS0-0','GS1-0','GS2-0'],
+        ['GS0-1','GS1-1','GS2-1'],
+        ['GS0-2','GS1-2','GS2-2'],
+        ['GS0-0','GS1-1','GS2-2'],
+        ['GS0-2','GS1-1','GS2-0'],
     ];
 
+    function newState(size) {
+        let newState = {};
+        for (let x = 0; x < size; x++) {
+            for (let y = 0; y < size; y++) {
+                newState[('GS' + x + '-' + y)] = UNPLAYED; //The 'GS' is necessary because CSS id's cant start with numbers
+            }
+        }
+        return newState;
+    }
+
     function findWinner() {
-        let winningPlayer = null;
         possibleWins.every(solution => {
-            let possibleWinnerIndex = null;
+            let possibleWinnerId = null;
             for(const squareID of solution) {
                 const ownerID = state[squareID];
-                if(possibleWinnerIndex == null) possibleWinnerIndex = ownerID; //set on first check
-                if(possibleWinnerIndex !== ownerID || ownerID === UNPLAYED) {
+                if(possibleWinnerId == null) possibleWinnerId = ownerID; //set on first check
+                if(possibleWinnerId !== ownerID || ownerID === UNPLAYED) {
                     return true; //should continue looking === true
                 }
             }
-            winningPlayer = possibleWinnerIndex;
+            winningPlayerId = possibleWinnerId;
             return false; //stop looking
         });
         
         //Check for tie
-        if (winningPlayer == null && availableSquares().length === 0) winningPlayer = TIE; 
-        return winningPlayer;
-    }
-
-    function recordPlay(play, playerId) {
-        state[play] = playerId;
-        winningPlayerId = findWinner();
+        if (winningPlayerId == null && availableSquares().length === 0) winningPlayerId = TIE; 
         return winningPlayerId;
     }
 
+    function recordPlay(play, playerId) {
+        this.state[play] = playerId;
+        return findWinner();
+    }
+
     function availableSquares() {
-        let availableSquares = [];
-        for(const squareID in state) {
-            if (state[squareID] != -1) availableSquares.push(squareID);
-        }
+        const availableSquares = Object.keys(state)
+            .filter(gameSquare => state[gameSquare] === UNPLAYED);
         return availableSquares;
     }
 
-    return {state, recordPlay, TIE, availableSquares};
+    return {state, TIE, winningPlayerId, recordPlay, availableSquares};
 }
 
 //GameEngine
 const Game = (() => {
     let players = [];
     let currentPlayerIndex = null;
-    let board = Board();
+    let board = null;
+
+    const GAME_SIZE = 3;
 
     function _advancePlayer() {
         let nextIndex = (currentPlayerIndex >= (players.length - 1)) ? 0 : currentPlayerIndex + 1;
@@ -71,63 +78,88 @@ const Game = (() => {
         if (currentPlayer().isAi) aiPlay(currentPlayer());
     }
 
-    function play(play) {
-        const winnerIndex = board.recordPlay(play, currentPlayerIndex);
-        if (winnerIndex == null) _advancePlayer();
-        if (winnerIndex >= 0 ) declareWinner(players[winner]);
+    function play(squareId) {
+        showPlay(squareId, currentPlayer());
+        const winnerId = board.recordPlay(squareId, currentPlayer().id);
+        if (winnerId) declareWinner(playerWithId(winnerId));
+        else _advancePlayer();
     }
 
     function aiPlay(player) {
-        const bestPlay = findPlay(player, null, board, 0, false);
+        const bestPlay = findPlay(player.id, 'X', board, 0, false);
         if (!bestPlay) return; //something went wrong
         play(bestPlay.play);
     }
 
     function findPlay(playerId, opponentId, board, depth, minimizing) {
-        const availablePlays = board.availableSquares();
-        const bestResult = null;
-        availablePlays.forEach(squareId => {
-            const newBoard  = {...board}; //copy the board
+        let bestResult = (minimizing) ? {play: '', score: 1000} : {play: '', score: -1000}; //start with the lowest possible score
+        board.availableSquares().forEach(squareId => {
+            const newBoard = Board({...board.state});
             const winnerId = newBoard.recordPlay(squareId, playerId);
-            const result = {play: squareId, score: 0};
-            if(winnerId != Board.TIE && winnerId != null) {
+
+            let result = {play: squareId, score: -100};
+            if(winnerId == null) {
+                //no winner, continue through tree
+                result = findPlay(opponentId, playerId, newBoard, depth + 1, !minimizing);
+            } else if(winnerId === newBoard.TIE) {
+                result.score = 0;
+            } else {
                 result.score = (minimizing) ? -100 + depth : 100 - depth;
-            } else if(winnerId == null) {
-                //continue through tree
-                result = findPlay(opponentId, playerId, newBoard , depth + 1, !minimizing);
             }
-            bestResult = (!bestResult || bestResult.score < result.score) ? result : bestResult;
+            bestResult.play = squareId;
+            bestResult.score = (minimizing) ? Math.min(bestResult.score, result.score) : Math.max(bestResult.score, result.score);
         });
-    
+
+        
         return bestResult;
+    }
+
+    function  minimax(board, depth, maximizingPlayer) {
+        if (depth === 0 || board.winningPlayerId) //or node is a terminal node 
+            //then score the play
+            return; //the heuristic value of node
+        if (maximizingPlayer) {
+            let score = -1000; 
+            const availablePlays = board.availableSquares();
+            availablePlays.forEach(squareId => {
+                const newBoard = Board({...board.state});
+                newBoard.recordPlay(squareId, 'O');
+                score = Math.max(score, minimax(newBoard, depth - 1, false));
+            });
+            return score;
+        }
+        let score = 1000; 
+        const availablePlays = board.availableSquares();
+        availablePlays.forEach(squareId => {
+            const newBoard = Board({...board.state});
+            newBoard.recordPlay(squareId, 'X');
+            score = Math.min(score, minimax(newBoard, depth - 1, true));
+        });
+        return score;
     }
 
     function currentPlayer() {
         return players[currentPlayerIndex];
     }
 
-    function registerGameSquare(square) {
-        board.state[square.id] = -1;
+    function playerWithId(id) {
+        return players.find(player => player.id === id);
     }
 
     function beginGame(player) {
         let newPlayers = 
-            [Player(0, 'X', 'images/x.png', false),
-            Player(1, 'O', 'images/o.png', true)];
+            [Player('X', 'X', 'images/x.png', false),
+            Player('O', 'O', 'images/o.png', true)];
         players = newPlayers;
         currentPlayerIndex = 0;
-        for(const gameSquare in board.state) {
-            board.state[gameSquare] = -1;
-        }
-        console.log(board.state);
-        console.log(players);
+        board = Board();
     }
 
     return {
         play,
         currentPlayer,
-        registerGameSquare,
         beginGame,
+        GAME_SIZE,
     }
 
 })();
@@ -148,14 +180,14 @@ function configureInterface() {
 }
 
 function buildBoard() {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < Game.GAME_SIZE; i++) {
         const gameRow = document.createElement('div');
         gameRow.classList.add('gameRow');
 
-        for (let j = 0; j < 3; j++) {
+        for (let j = 0; j < Game.GAME_SIZE; j++) {
             const gameSquare = document.createElement('div');
             gameSquare.classList.add('gameSquare');
-            gameSquare.id = (`${i}-${j}`);
+            gameSquare.id = (`GS${i}-${j}`);
             gameSquare.addEventListener('click', gameSquareClicked);
 
             const marker = document.createElement('img');
@@ -165,16 +197,13 @@ function buildBoard() {
 
             gameSquare.appendChild(marker);
             gameRow.appendChild(gameSquare);
-
-            Game.registerGameSquare(gameSquare);
         }
         gameBoard.appendChild(gameRow);
     }
 }
 
 function declareWinner(winner) {
-    if (!winner) return;
-    let winningMessage = (winner === Board.tie) ? 'Its a tie' : `Player ${winner.name} Wins!`;
+    let winningMessage = (!winner) ? 'Its a tie' : `Player ${winner.name} Wins!`;
     freezeBoard();
     alert(winningMessage);
 }
@@ -185,14 +214,18 @@ function freezeBoard() {
     });
 }
 
+function showPlay(squareID, player) {
+    const gameSquare = document.querySelector('#' + squareID);
+    const marker = gameSquare.querySelector('.marker');
+    marker.src = player.markerFile;
+    marker.classList.remove('hidden');
+    gameSquare.classList.add('inactive');
+}
+
 function gameSquareClicked(e) {
     if(this.classList.contains('inactive')) return;
     console.log('click on ' + this.id);
-    const marker = this.querySelector('.marker');
-    marker.src = Game.currentPlayer().markerFile;
-    marker.classList.remove('hidden');
-    this.classList.add('inactive');
-    Game.play(null, this.id);
+    Game.play(this.id);
 }
 
 function resetButtonClicked(e) {
